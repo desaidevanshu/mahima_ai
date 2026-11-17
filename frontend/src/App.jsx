@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   Activity, ArrowUpRight, AudioLines, CalendarDays, Check, CircleHelp,
-  Clock3, Command, LayoutDashboard, LogOut, Menu, Mic, Phone, Plus,
+  Clock3, Command, LayoutDashboard, LogOut, Menu, Mic, Phone, Plus, MessageCircle,
   Search, Settings, ShieldCheck, Sparkles, Users, X, LoaderCircle
 } from 'lucide-react'
 import { GoogleAuthProvider, onAuthStateChanged, signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth'
@@ -48,14 +48,119 @@ function LeadTable({ leads }) {
   return <div className="overflow-x-auto"><table className="w-full min-w-[650px] text-left"><thead className="bg-[#f0efe8] text-[10px] font-bold uppercase tracking-widest text-zinc-500"><tr>{['Customer','Phone','Requirement','Interest','Status'].map(x => <th key={x} className="px-5 py-3">{x}</th>)}</tr></thead><tbody>{leads.map(lead => <tr key={lead.id} className="border-t border-zinc-200 text-xs"><td className="px-5 py-4"><p className="font-bold">{lead.name}</p><p className="mt-1 text-[10px] text-zinc-500">{lead.id}</p></td><td className="px-5 py-4">{lead.phone || '—'}</td><td className="px-5 py-4 font-semibold">{lead.configuration || '—'}</td><td className="px-5 py-4"><Interest value={lead.interest}/></td><td className="px-5 py-4">{lead.status || '—'}</td></tr>)}</tbody></table></div>
 }
 
-function VoicePanel({ state, status, onToggle, configured }) {
+function normalizeConversationTurn(message) {
+  const rawRole = String(message?.role || '').toLowerCase()
+  const text = String(message?.transcript ?? message?.message ?? '').trim()
+  if (!text || !['assistant', 'bot', 'agent', 'user'].includes(rawRole)) return null
+  return { role: ['assistant', 'bot', 'agent'].includes(rawRole) ? 'assistant' : 'user', text }
+}
+
+function appendConversationTurn(turns, turn) {
+  if (!turn || turns.at(-1)?.role === turn.role && turns.at(-1)?.text === turn.text) return turns
+  return [...turns, turn]
+}
+
+function ConversationThread({ transcript, state, compact = false, onStart, configured = false }) {
+  const endRef = useRef(null)
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }) }, [transcript])
+
+  const hasTranscript = transcript.length > 0
+  return <div className={`flex flex-col gap-3 overflow-y-auto pr-1 ${compact ? 'h-48' : 'min-h-0 flex-1'}`} aria-live="polite">
+    {!hasTranscript && <div className="flex items-start gap-2">
+      <span className="grid h-8 w-8 shrink-0 place-items-center border-2 border-ink bg-signal"><Sparkles size={15}/></span>
+      <div className="conversation-message min-w-0 max-w-[85%] break-words border-2 border-ink bg-white px-3 py-2 text-sm leading-6 shadow-[2px_2px_0_#171717]">
+        <p className="font-bold">Your conversation will appear here.</p>
+        <p className="mt-1 text-xs leading-5 text-zinc-600">Start talking and you’ll see both your messages and the assistant’s replies.</p>
+        {onStart && <button
+          type="button"
+          disabled={!configured || state === 'connecting' || state === 'saving'}
+          onClick={onStart}
+          className="primary-button mt-3 w-full justify-center disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Mic size={15}/>{state === 'connecting' ? 'Connecting…' : state === 'connected' ? 'End conversation' : 'Start talking'}
+        </button>}
+      </div>
+    </div>}
+    {transcript.map((turn, index) => {
+      const isAssistant = ['assistant', 'bot', 'agent'].includes(String(turn.role).toLowerCase())
+      return <motion.div
+        key={`${index}-${turn.role}-${turn.text}`}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className={`flex min-w-0 items-end gap-2 ${isAssistant ? '' : 'justify-end'}`}
+      >
+        {isAssistant && <span className="grid h-8 w-8 shrink-0 place-items-center border-2 border-ink bg-signal"><Sparkles size={15}/></span>}
+        <div className={`conversation-message min-w-0 max-w-[85%] break-words border-2 border-ink px-3 py-2 text-sm leading-6 shadow-[2px_2px_0_#171717] ${isAssistant ? 'bg-white' : 'bg-[#e7f2e8]'}`}>
+          <p className="whitespace-pre-wrap">{turn.text}</p>
+          <p className="mt-1 text-[9px] font-bold uppercase tracking-widest text-zinc-400">{isAssistant ? 'Mahima AI' : 'You'}</p>
+        </div>
+        {!isAssistant && <span className="grid h-8 w-8 shrink-0 place-items-center border-2 border-ink bg-sky text-[10px] font-black">YOU</span>}
+      </motion.div>
+    })}
+    {state === 'connecting' && <p className="ml-10 text-xs font-semibold text-zinc-500">Connecting to your assistant…</p>}
+    {state === 'connected' && !hasTranscript && <p className="ml-10 text-xs font-semibold text-zinc-500">Listening… start speaking when you’re ready.</p>}
+    <div ref={endRef}/>
+  </div>
+}
+
+function VoiceAssistantModal({ open, onClose, state, status, transcript, onToggle, configured }) {
+  if (!open) return null
+  const connected = state === 'connected'
+  const connecting = state === 'connecting'
+  return <div className="fixed inset-0 z-[70] flex items-end justify-center bg-ink/60 p-0 backdrop-blur-sm sm:items-center sm:p-5" onMouseDown={event => { if (event.target === event.currentTarget && !connected && !connecting) onClose() }}>
+    <motion.section
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="voice-modal-title"
+      initial={{ opacity: 0, y: 28, scale: .97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      className="relative grid h-[100dvh] w-full max-w-xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-2 border-ink bg-paper shadow-[8px_8px_0_#171717] sm:h-[min(90vh,760px)] sm:max-h-[90vh]"
+    >
+      <div className="relative shrink-0 overflow-hidden border-b-2 border-ink bg-[#20201e] px-4 pb-3 pt-4 text-white sm:px-7 sm:pb-5 sm:pt-6">
+        <div className="absolute -right-7 -top-10 h-40 w-40 rounded-full border-[24px] border-white/5"/>
+        <div className="relative flex items-start justify-between gap-4">
+          <div>
+            <span className="tag tag-yellow"><AudioLines size={12} className="mr-1"/> YOUR VOICE ASSISTANT</span>
+            <h2 id="voice-modal-title" className="mt-3 font-display text-xl font-black sm:mt-4 sm:text-3xl">Let’s find your kind of home.</h2>
+            <p className="mt-2 max-w-md text-xs leading-5 text-white/65">Ask about 3 &amp; 4 BHK homes, pricing, or request a site visit—in Hinglish or English.</p>
+          </div>
+          <button type="button" className="icon-button shrink-0" aria-label="Close voice assistant" onClick={onClose}><X size={17}/></button>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-bold sm:mt-5">
+          <span className="border border-white/30 px-2 py-1">3 &amp; 4 BHK</span>
+          <span className="border border-white/30 px-2 py-1">₹5,500 / sq. ft.</span>
+          <span className="border border-white/30 px-2 py-1">Tonk Road, Jaipur</span>
+        </div>
+      </div>
+      <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden p-4 sm:p-6">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="eyebrow">YOUR CONVERSATION</p>
+          <span className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-widest text-zinc-500">
+            <span className={`h-2 w-2 rounded-full ${connected ? 'animate-pulse bg-emerald-500' : connecting ? 'animate-pulse bg-amber-500' : 'bg-zinc-300'}`}/>
+            {connected ? 'Live' : connecting ? 'Connecting' : state === 'saving' ? 'Saving' : 'Ready'}
+          </span>
+        </div>
+        <ConversationThread transcript={transcript} state={state} onStart={onToggle} configured={configured} />
+        <div className="mt-3 grid shrink-0 gap-2 border-t border-dashed border-zinc-300 bg-paper pt-3 sm:pt-4">
+          <p className="text-center text-xs text-zinc-500">{status}</p>
+          <button type="button" disabled={!configured || connecting || state === 'saving'} onClick={onToggle} className={`primary-button min-h-12 w-full justify-center ${connected ? 'bg-coral' : ''} disabled:cursor-not-allowed disabled:opacity-50`}>
+            <Mic size={16}/>{connecting ? 'Connecting…' : connected ? 'End conversation' : state === 'saving' ? 'Saving enquiry…' : 'Start talking'}
+          </button>
+        </div>
+        {!configured && <p className="mt-3 text-xs font-semibold text-coral">Voice assistant isn’t configured yet. Please use the enquiry form.</p>}
+      </div>
+    </motion.section>
+  </div>
+}
+
+function VoicePanel({ state, status, transcript = [], onToggle, configured }) {
   const connected = state === 'connected'
   const connecting = state === 'connecting'
   return <section className="brutal-card"><div className="border-b-2 border-ink bg-white px-5 py-4"><p className="eyebrow">Voice workspace</p><h2 className="mt-1 font-display text-xl font-bold">Talk to your agent</h2></div><div className="p-5"><div className="relative overflow-hidden border-2 border-ink bg-[#20201e] p-5 text-white shadow-brutal">
     <div className="flex items-center justify-between"><span className="tag tag-yellow">BROWSER VOICE TEST</span><span className="text-[10px] font-bold text-emerald-300">{connected ? 'CONNECTED' : connecting ? 'CONNECTING' : 'STANDBY'}</span></div>
-    <div className="my-8 flex justify-center"><div className={`grid h-24 w-24 place-items-center rounded-full border-2 border-white/70 bg-signal text-ink ${connected ? 'animate-pulse' : ''}`}><AudioLines size={40}/></div></div>
+    <div className="my-5 border-2 border-white/15 bg-white/5 p-3"><ConversationThread transcript={transcript} state={state} compact/></div>
     <p className="text-center font-display text-xl font-bold">Mahima Sales Assistant</p><p className="mt-1 text-center text-xs text-white/60">{status}</p>
-    <button disabled={!configured || connecting} onClick={onToggle} className={`mt-6 flex w-full items-center justify-center gap-2 border-2 border-white px-4 py-3 text-sm font-bold text-ink disabled:opacity-50 ${connected ? 'bg-coral' : 'bg-signal'}`}><Mic size={17}/>{connecting ? 'Connecting…' : connected ? 'End voice session' : 'Start browser voice test'}</button>
+    <button disabled={!configured || connecting} onClick={onToggle} className={`mt-5 flex w-full items-center justify-center gap-2 border-2 border-white px-4 py-3 text-sm font-bold text-ink disabled:opacity-50 ${connected ? 'bg-coral' : 'bg-signal'}`}><Mic size={17}/>{connecting ? 'Connecting…' : connected ? 'End voice session' : 'Start browser voice test'}</button>
   </div><p className="mt-4 flex items-start gap-2 text-[11px] leading-relaxed text-zinc-500"><CircleHelp size={15} className="mt-0.5 shrink-0"/> Requires Vapi public key, assistant ID, configured assistant and microphone permission. This is a browser voice session, not an outbound phone call.</p></div></section>
 }
 
@@ -64,39 +169,79 @@ function CustomerWebsite() {
   const [form, setForm] = useState({ name: '', phone: '', email: '', configuration: 'Undecided', purpose: 'Self-use', preferredVisitDate: '', message: '' })
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
-  const [voiceBusy, setVoiceBusy] = useState(false)
+  const [voiceState, setVoiceState] = useState('idle')
+  const [voiceStatus, setVoiceStatus] = useState('Ready when you are')
+  const [transcript, setTranscript] = useState([])
+  const [voiceModalOpen, setVoiceModalOpen] = useState(false)
+  const [voicePanelVisible, setVoicePanelVisible] = useState(true)
   const clientRef = useRef(null)
+  const voicePanelRef = useRef(null)
   const transcriptRef = useRef([])
   const callIdRef = useRef(null)
   useEffect(() => {
     if (!isVapiConfigured) return
     const client = createVapiClient(); clientRef.current = client
-    client?.on('call-start', () => setVoiceBusy(true))
+    client?.on('call-start', () => { setVoiceState('connected'); setVoiceStatus('You’re connected. Go ahead and speak.') })
     client?.on('call-start-success', event => { callIdRef.current = event?.callId || callIdRef.current })
     client?.on('message', message => {
       if (message?.type === 'transcript' && message.transcript && (!message.transcriptType || message.transcriptType === 'final')) {
-        transcriptRef.current = [...transcriptRef.current, { role: message.role || 'assistant', text: message.transcript }]
+        const turn = normalizeConversationTurn(message)
+        const updated = appendConversationTurn(transcriptRef.current, turn)
+        transcriptRef.current = updated
+        setTranscript(updated)
+      } else if (message?.type === 'conversation-update' && Array.isArray(message.messages)) {
+        const turns = message.messages.map(normalizeConversationTurn).filter(Boolean)
+        transcriptRef.current = turns
+        setTranscript(turns)
       }
     })
     client?.on('call-end', async () => {
-      setVoiceBusy(false)
+      setVoiceState('saving')
+      setVoiceStatus('Conversation ended. Saving your enquiry…')
       const transcript = transcriptRef.current
-      if (!transcript.length) return
+      if (!transcript.length) {
+        setVoiceState('idle')
+        setVoiceStatus('Call ended without a transcript. You can try again or use the enquiry form.')
+        return
+      }
       try {
         const result = await api.submitVoiceEnquiry({
           callId: callIdRef.current || crypto.randomUUID(),
           transcript,
         })
-        setNotice(result.message)
+        const message = result.message || 'Your conversation was saved.'
+        setVoiceStatus(message)
+        setNotice(message)
       } catch (error) {
-        setNotice(`Voice enquiry could not be saved: ${error.message}. Please use the enquiry form.`)
+        const message = `Voice enquiry could not be saved: ${error.message}. Please use the enquiry form.`
+        setVoiceStatus(message)
+        setNotice(message)
       } finally {
+        setVoiceState('idle')
         transcriptRef.current = []
         callIdRef.current = null
       }
     })
-    client?.on('error', () => { setVoiceBusy(false); setNotice('Voice session could not start. Please use the enquiry form.') })
+    client?.on('error', error => {
+      setVoiceState('idle')
+      const message = `Voice session error: ${error?.message || 'Please check microphone permission or use the enquiry form.'}`
+      setVoiceStatus(message)
+      setNotice(message)
+    })
     return () => { try { client?.stop() } catch {} }
+  }, [])
+  useEffect(() => {
+    if (!voiceModalOpen || voiceState === 'connected' || voiceState === 'connecting') return
+    const handleKeyDown = event => { if (event.key === 'Escape') setVoiceModalOpen(false) }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [voiceModalOpen, voiceState])
+  useEffect(() => {
+    const panel = voicePanelRef.current
+    if (!panel || !('IntersectionObserver' in window)) return
+    const observer = new IntersectionObserver(([entry]) => setVoicePanelVisible(entry.isIntersecting), { threshold: 0.05 })
+    observer.observe(panel)
+    return () => observer.disconnect()
   }, [])
   async function submit(e) {
     e.preventDefault(); setBusy(true); setNotice('')
@@ -105,18 +250,34 @@ function CustomerWebsite() {
   }
   async function toggleVoice() {
     const client = clientRef.current
-    if (!client) { setNotice('Voice assistant is not configured yet. Please use the enquiry form.'); return }
-    if (voiceBusy) { client.stop(); return }
+    if (!client) { setVoiceStatus('Voice assistant is not configured yet. Please use the enquiry form.'); return }
+    if (voiceState === 'connected' || voiceState === 'connecting') { setVoiceStatus('Ending voice session…'); client.stop(); return }
     try {
       transcriptRef.current = []
       callIdRef.current = null
+      setTranscript([])
+      setNotice('')
+      setVoiceState('connecting')
+      setVoiceStatus('Requesting microphone permission and connecting…')
       await client.start(vapiAssistantId)
-    } catch { setNotice('Could not start voice session. Please check microphone permission or use the form.') }
+    } catch (error) {
+      const message = `Could not start voice session: ${error?.message || 'Please check microphone permission or use the form.'}`
+      setVoiceState('idle')
+      setVoiceStatus(message)
+      setNotice(message)
+    }
   }
   return <div className="min-h-screen bg-paper text-ink"><header className="border-b-2 border-ink bg-paper"><div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5"><div className="font-display text-2xl font-black">MAHIMA<span className="text-coral">.</span></div><a className="secondary-button" href="/admin">Sales team login <ArrowUpRight size={14}/></a></div></header>
     <main className="mx-auto max-w-6xl px-5 py-12"><section className="grid items-center gap-10 lg:grid-cols-[1.2fr_.8fr]"><div><span className="tag tag-coral">MAHIMA PALM SPRINGS · JAIPUR</span><h1 className="mt-5 max-w-3xl font-display text-5xl font-black leading-[1.02] tracking-tight md:text-7xl">Find a home that feels like <span className="text-coral">yours.</span></h1><p className="mt-6 max-w-xl text-base leading-7 text-zinc-600">Explore spacious 3 BHK and 4 BHK residences on Tonk Road, Jaipur. Share your requirements or speak with our AI sales assistant.</p><div className="mt-8 grid max-w-xl grid-cols-2 gap-3">{[['3 & 4 BHK','Configurations'],['1,705–2,619','Sq. ft.'],['₹5,500','Rate per sq. ft.'],['Jan 2027','Expected possession']].map(([v,l])=><div key={l} className="brutal-card p-4"><p className="font-display text-2xl font-black">{v}</p><p className="mt-1 text-xs text-zinc-500">{l}</p></div>)}</div><p className="mt-5 text-xs text-zinc-500">Tonk Road · Approx. 3 km from Chokhi Dhani · Opposite Radha Swami Satsang Beas</p></div>
-      <section className="brutal-card bg-[#20201e] p-6 text-white"><span className="tag tag-yellow">AI VOICE ASSISTANT</span><h2 className="mt-5 font-display text-3xl font-black">Have a quick conversation.</h2><p className="mt-3 text-sm leading-6 text-white/65">Ask about configurations, location, indicative pricing or request a site visit. The assistant can speak with you in Hinglish or English.</p><button onClick={toggleVoice} disabled={!isVapiConfigured} className="mt-7 flex w-full items-center justify-center gap-2 border-2 border-white bg-signal px-5 py-4 font-bold text-ink disabled:opacity-50"><Mic size={18}/>{voiceBusy ? 'End conversation' : 'Talk to AI assistant'}</button><p className="mt-3 text-[11px] text-white/50">Browser voice session · Microphone permission required</p></section></section>
-    <section id="enquiry" className="mt-16 grid gap-8 lg:grid-cols-[.7fr_1.3fr]"><div><p className="eyebrow">LET'S CONNECT</p><h2 className="mt-2 font-display text-4xl font-black">Request a callback or site visit.</h2><p className="mt-4 text-sm leading-6 text-zinc-600">Share your details and the sales team can follow up. A submitted date is a preference, not a confirmed appointment.</p></div><form onSubmit={submit} className="brutal-card grid gap-4 p-6 sm:grid-cols-2"><label className="text-xs font-bold">Full name *<input className="brutal-input mt-2 w-full" required minLength={2} value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label><label className="text-xs font-bold">Phone number *<input className="brutal-input mt-2 w-full" required minLength={8} value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})}/></label><label className="text-xs font-bold">Email (optional)<input className="brutal-input mt-2 w-full" type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></label><label className="text-xs font-bold">Configuration<select className="brutal-input mt-2 w-full" value={form.configuration} onChange={e=>setForm({...form,configuration:e.target.value})}><option>Undecided</option><option>3 BHK</option><option>4 BHK</option></select></label><label className="text-xs font-bold">Purpose<select className="brutal-input mt-2 w-full" value={form.purpose} onChange={e=>setForm({...form,purpose:e.target.value})}><option>Self-use</option><option>Investment</option><option>Not decided</option></select></label><label className="text-xs font-bold">Preferred site visit date<input className="brutal-input mt-2 w-full" type="date" value={form.preferredVisitDate} onChange={e=>setForm({...form,preferredVisitDate:e.target.value})}/></label><label className="text-xs font-bold sm:col-span-2">Message (optional)<textarea className="brutal-input mt-2 min-h-24 w-full" value={form.message} onChange={e=>setForm({...form,message:e.target.value})} placeholder="Tell us what you would like to know…"/></label><div className="sm:col-span-2"><button className="primary-button" disabled={busy}>{busy ? 'Submitting…' : 'Submit enquiry'} <ArrowUpRight size={15}/></button>{notice && <p className="mt-3 border-2 border-ink bg-signal p-3 text-xs font-bold">{notice}</p>}<p className="mt-3 text-[10px] text-zinc-500">By submitting, you request the Mahima Palm Springs team to contact you about this enquiry.</p></div></form></section></main><footer className="border-t-2 border-ink px-5 py-6 text-center text-xs text-zinc-500">MAHIMA PALM SPRINGS · TONK ROAD, JAIPUR</footer></div>
+      <section ref={voicePanelRef} className="voice-assistant-card brutal-card p-6"><span className="tag tag-yellow">AI VOICE ASSISTANT</span><h2 className="mt-5 font-display text-3xl font-black">Have a quick conversation.</h2><p className="mt-3 text-sm leading-6">Ask about configurations, location, indicative pricing or request a site visit. The assistant can speak with you in Hinglish or English.</p><div className="my-5 border-2 border-white/15 bg-white/5 p-3"><ConversationThread transcript={transcript} state={voiceState} compact/></div><p className="mb-4 text-center text-xs">{voiceStatus}</p><button onClick={() => setVoiceModalOpen(true)} className="mt-2 flex w-full items-center justify-center gap-2 border-2 border-white bg-signal px-5 py-4 font-bold text-ink"><Mic size={18}/>{voiceState === 'connected' ? 'Return to conversation' : 'Talk to AI assistant'}<ArrowUpRight size={15}/></button><p className="mt-3 text-center text-[11px] text-white/70">Microphone permission is requested only when you start the conversation.</p></section></section>
+    <section id="enquiry" className="mt-16 grid gap-8 lg:grid-cols-[.7fr_1.3fr]"><div><p className="eyebrow">LET'S CONNECT</p><h2 className="mt-2 font-display text-4xl font-black">Request a callback or site visit.</h2><p className="mt-4 text-sm leading-6 text-zinc-600">Share your details and the sales team can follow up. A submitted date is a preference, not a confirmed appointment.</p></div><form onSubmit={submit} className="brutal-card grid gap-4 p-6 sm:grid-cols-2"><label className="text-xs font-bold">Full name *<input className="brutal-input mt-2 w-full" required minLength={2} value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label><label className="text-xs font-bold">Phone number *<input className="brutal-input mt-2 w-full" required minLength={8} value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})}/></label><label className="text-xs font-bold">Email (optional)<input className="brutal-input mt-2 w-full" type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></label><label className="text-xs font-bold">Configuration<select className="brutal-input mt-2 w-full" value={form.configuration} onChange={e=>setForm({...form,configuration:e.target.value})}><option>Undecided</option><option>3 BHK</option><option>4 BHK</option></select></label><label className="text-xs font-bold">Purpose<select className="brutal-input mt-2 w-full" value={form.purpose} onChange={e=>setForm({...form,purpose:e.target.value})}><option>Self-use</option><option>Investment</option><option>Not decided</option></select></label><label className="text-xs font-bold">Preferred site visit date<input className="brutal-input mt-2 w-full" type="date" value={form.preferredVisitDate} onChange={e=>setForm({...form,preferredVisitDate:e.target.value})}/></label><label className="text-xs font-bold sm:col-span-2">Message (optional)<textarea className="brutal-input mt-2 min-h-24 w-full" value={form.message} onChange={e=>setForm({...form,message:e.target.value})} placeholder="Tell us what you would like to know…"/></label><div className="sm:col-span-2"><button className="primary-button" disabled={busy}>{busy ? 'Submitting…' : 'Submit enquiry'} <ArrowUpRight size={15}/></button>{notice && <p className="mt-3 border-2 border-ink bg-signal p-3 text-xs font-bold">{notice}</p>}<p className="mt-3 text-[10px] text-zinc-500">By submitting, you request the Mahima Palm Springs team to contact you about this enquiry.</p></div></form></section></main><footer className="border-t-2 border-ink px-5 py-6 text-center text-xs text-zinc-500">MAHIMA PALM SPRINGS · TONK ROAD, JAIPUR</footer>
+    {!voicePanelVisible && !voiceModalOpen && <motion.button type="button" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .5 }} onClick={() => setVoiceModalOpen(true)} aria-label="Open Mahima AI voice assistant" className="fixed bottom-5 right-5 z-40 flex items-center gap-3 border-2 border-ink bg-signal px-3 py-3 text-left shadow-[4px_4px_0_#171717] transition hover:translate-y-0.5 hover:shadow-[2px_2px_0_#171717] sm:bottom-7 sm:right-7 sm:px-4">
+      <span className="grid h-10 w-10 place-items-center rounded-full border-2 border-ink bg-white"><MessageCircle size={19}/></span>
+      <span className="hidden sm:block"><span className="block text-xs font-black">{voiceState === 'connected' ? 'Conversation live' : 'Talk with Mahima AI'}</span><span className="mt-0.5 block text-[9px] font-bold uppercase tracking-widest">{voiceState === 'connected' ? 'Tap to return' : 'Ask about your new home'}</span></span>
+      <ArrowUpRight size={16} className="hidden sm:block"/>
+    </motion.button>}
+    <VoiceAssistantModal open={voiceModalOpen} onClose={() => setVoiceModalOpen(false)} state={voiceState} status={voiceStatus} transcript={transcript} onToggle={toggleVoice} configured={isVapiConfigured}/>
+  </div>
 }
 
 export default function App() {

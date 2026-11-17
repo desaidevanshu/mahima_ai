@@ -48,7 +48,7 @@ Fill in the values in `.env.local`. Do not share this file or commit it to Git.
 1. Open https://dashboard.vapi.ai/
 2. Create an assistant named `Mahima Sales Assistant`.
 3. Copy the complete content of `assistant-prompt.md` into the assistant's System Message.
-4. Configure the model, voice and transcriber in Vapi. Select a voice and transcriber that support Hindi/English or Hinglish; test pronunciation before recording the demo.
+4. Configure the model, voice and transcriber in Vapi. Select Hindi/English or Hinglish support, not Urdu, and set Hindi as the preferred language when the selected transcriber supports it. The system prompt asks the assistant to use Devanagari for Hindi and never Urdu script; after changing the local prompt, copy it into Vapi and publish the assistant. Test both the spoken language and transcript script before recording the demo.
 5. Configure the assistant's first message in Vapi, for example:
    `Hello! Namaste, kya main [Customer Name] ji se baat kar raha/rahi hoon?`
    If the Vapi assistant does not support your desired dynamic name variable, use a neutral greeting instead.

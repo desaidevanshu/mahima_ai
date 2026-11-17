@@ -152,7 +152,7 @@ Browser voice sessions also submit their final transcript to `POST /api/public/v
 ## Configure the Vapi assistant
 1. Create `Mahima Sales Assistant` in Vapi.
 2. Paste the latest `frontend/src/assistantPrompt.js` content (or use `assistant-prompt.md` if separately exported) into System Message, then save/publish the assistant after prompt changes.
-3. Select a model, a Hindi/English-capable voice and transcriber; test the actual Hinglish pronunciation.
+3. Select a model, a Hindi/English-capable voice and transcriber (not Urdu), and set Hindi as the preferred language where supported. The prompt requires Devanagari for Hindi and prohibits Urdu script; copy/publish the updated prompt in Vapi and test both speech and transcript before recording.
 4. Use the Public API Key and Assistant ID in frontend `.env.local`.
 5. Browser voice test is a web session, not an outbound telephone call.
 
