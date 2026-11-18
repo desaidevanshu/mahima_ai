@@ -135,6 +135,16 @@ npm run dev
 
 Open the Vite URL (usually http://localhost:5173). Sign in with the Firebase admin account. Add a lead; it should be stored through FastAPI in Firestore.
 
+### Deploy the frontend
+
+For a Vercel frontend deployment, set the project Root Directory to `frontend` and add this environment variable for Production:
+
+```text
+VITE_API_BASE_URL=https://mahima-ai.vercel.app
+```
+
+The frontend also uses this URL as its production default; the environment variable lets you override it. In the backend deployment, set `CORS_ORIGINS` to the frontend's exact origin (for example, `https://your-frontend.vercel.app`; do not include a trailing slash). If the frontend and backend use different origins, the backend must allow the frontend origin.
+
 ## Configure Vapi webhook
 
 1. Deploy the FastAPI backend to a public HTTPS URL for external Vapi webhook delivery. `localhost` is not reachable by Vapi cloud.

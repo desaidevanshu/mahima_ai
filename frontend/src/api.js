@@ -1,4 +1,7 @@
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '')
+const DEFAULT_API_BASE = import.meta.env.PROD
+  ? 'https://mahima-ai.vercel.app'
+  : 'http://localhost:8000'
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE).replace(/\/$/, '')
 
 async function request(path, { token, ...options } = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
