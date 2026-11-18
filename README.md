@@ -68,6 +68,8 @@ mahima-ai/
 
 ### 2. Backend
 
+The backend Python runtime is pinned to 3.12 in `backend/.python-version` for deployment providers.
+
 Windows PowerShell:
 ```powershell
 cd backend
