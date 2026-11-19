@@ -132,6 +132,20 @@ def _digits(value: str) -> str:
     )
 
 
+def _normalize_configuration(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+
+    text = value.casefold().strip()
+    if not text or text in {"undecided", "not decided", "unknown", "not specified"}:
+        return None
+    if re.search(r"\b(?:4|four|4\s*(?:bhk|bedroom)|चार)\b", text):
+        return "4 BHK"
+    if re.search(r"\b(?:3|three|3\s*(?:bhk|bedroom)|तीन)\b", text):
+        return "3 BHK"
+    return None
+
+
 def _extract_phone(turns: list[dict[str, str]]) -> str | None:
     user_turns = [
         turn for turn in turns
@@ -171,7 +185,7 @@ def extract_voice_lead(transcript: Any, structured_data: Any = None) -> dict[str
     fields: dict[str, str | None] = {
         "name": _valid_name(structured.get("name")),
         "phone": _valid_phone(structured.get("phone")),
-        "configuration": structured.get("configuration"),
+        "configuration": _normalize_configuration(structured.get("configuration")),
         "interest": structured.get("interest"),
         "preferredVisitDate": structured.get("preferredVisitDate"),
         "purpose": None,
@@ -186,13 +200,10 @@ def extract_voice_lead(transcript: Any, structured_data: Any = None) -> dict[str
                     break
 
     if not fields["configuration"]:
-        configuration_match = re.search(
-            r"(?<!\d)([34])\s*(?:bhk|बी\s*एच\s*के)\b",
-            user_text,
-            re.IGNORECASE,
-        )
-        if configuration_match:
-            fields["configuration"] = f"{configuration_match.group(1)} BHK"
+        if re.search(r"\bfour\b|4\s*(?:[- ]?(?:bhk|bedroom|bedrooms|बी\s*एच\s*के))|चार\s*(?:बी\s*एच\s*के|bhk)?", user_text, re.IGNORECASE):
+            fields["configuration"] = "4 BHK"
+        elif re.search(r"\bthree\b|3\s*(?:[- ]?(?:bhk|bedroom|bedrooms|बी\s*एच\s*के))|तीन\s*(?:बी\s*एच\s*के|bhk)?", user_text, re.IGNORECASE):
+            fields["configuration"] = "3 BHK"
 
     if re.search(r"\binvestment\b|इन्वेस्टमेंट|निवेश", user_text, re.IGNORECASE):
         fields["purpose"] = "Investment"

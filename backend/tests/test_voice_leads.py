@@ -78,6 +78,18 @@ class VoiceLeadExtractionTests(unittest.TestCase):
         self.assertEqual(lead["name"], "Anita Verma")
         self.assertEqual(lead["phone"], "9876543210")
 
+    def test_extracts_spoken_configuration_variants(self):
+        cases = [
+            ("I want a 3 BHK flat.", "3 BHK"),
+            ("I am looking for a 3-bedroom apartment.", "3 BHK"),
+            ("Please show me a four bedroom option.", "4 BHK"),
+            ("मुझे चार बीएचके चाहिए।", "4 BHK"),
+        ]
+        for transcript, expected in cases:
+            with self.subTest(transcript=transcript):
+                lead = extract_voice_lead([{"role": "user", "text": transcript}])
+                self.assertEqual(lead["configuration"], expected)
+
     def test_extracts_hindi_name_and_phone_split_across_transcript_turns(self):
         transcript = [
             {"role": "assistant", "text": "आपका नाम और mobile number बता दीजिए।"},
