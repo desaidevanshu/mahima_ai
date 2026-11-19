@@ -1,4 +1,4 @@
-# Mahima Palm Springs — Voice Agent Test Cases
+# Mahima Palm Springs - Voice Agent Test Cases
 
 | # | Customer scenario | Expected behaviour |
 |---|---|---|

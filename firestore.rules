@@ -1,8 +1,7 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Dashboard data should be accessed through the authenticated FastAPI backend.
-    // Admin SDK bypasses these rules. Deny direct client reads/writes by default.
+    
     match /{document=**} {
       allow read, write: if false;
     }

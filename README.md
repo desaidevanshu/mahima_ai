@@ -1,4 +1,4 @@
-# MAHIMA.AI — Full-stack Internship Project
+# MAHIMA.AI - Full-stack Internship Project
 
 A split frontend/backend application for the Mahima Palm Springs voice-agent assignment.
 

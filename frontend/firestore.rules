@@ -1,8 +1,7 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // This starter is a single-workspace admin dashboard.
-    // Enable Firebase Email/Password Auth and create admin users yourself.
+    
     match /leads/{leadId} {
       allow read, write: if request.auth != null;
     }
